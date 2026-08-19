@@ -79,14 +79,18 @@ func RecastReduceTerm(in RecastInput) (RecastResult, error) {
 
 // RecastReducePayment keeps the remaining term fixed and recomputes a lower
 // per-period payment over the new outstanding principal. The remaining periods
-// = OriginalTerm − PaidPeriods.
+// = OriginalTerm − PaidPeriods: the rebuilt plan covers ONLY the unpaid periods,
+// so the original total term (OriginalTerm) is unchanged. Re-adding the paid
+// periods would extend the term (e.g. 1 paid of 12 → a 12-period plan makes the
+// loan 1 + 12 = 13 periods), which reduce_payment must never do.
 func RecastReducePayment(in RecastInput) (RecastResult, error) {
-	remaining := in.OriginalTerm
+	remaining := in.OriginalTerm - in.PaidPeriods
 	if remaining < 0 {
 		return RecastResult{}, fmt.Errorf("reduce_payment: paid %d exceeds term %d", in.PaidPeriods, in.OriginalTerm)
 	}
 	if in.Outstanding <= 0 {
-		return RecastResult{TermPeriods: in.PaidPeriods + remaining, Schedule: nil}, nil
+		// Fully prepaid: no remaining periods, but the total term is unchanged.
+		return RecastResult{TermPeriods: in.OriginalTerm, Schedule: nil}, nil
 	}
 	if remaining == 0 {
 		return RecastResult{}, fmt.Errorf("reduce_payment: no remaining periods but outstanding %d > 0", in.Outstanding)
@@ -105,9 +109,11 @@ func RecastReducePayment(in RecastInput) (RecastResult, error) {
 
 // RecastRateChange recomputes the schedule over the remaining term at a new
 // periodic rate. It behaves like reduce_payment (term unchanged) but with the
-// new rate. Past payments are immutable.
+// new rate. The remaining periods = OriginalTerm − PaidPeriods (the unpaid
+// periods only), so the total term is unchanged; the +1 here would extend the
+// term by re-counting the just-paid period. Past payments are immutable.
 func RecastRateChange(in RecastInput) (RecastResult, error) {
-	remaining := in.OriginalTerm - in.PaidPeriods + 1
+	remaining := in.OriginalTerm - in.PaidPeriods
 	if remaining < 0 {
 		return RecastResult{}, fmt.Errorf("rate_change: paid %d exceeds term %d", in.PaidPeriods, in.OriginalTerm)
 	}
